@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle monitoring</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/home.css') }}" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1>vehicle monitoring</h1>
+                <div>
+                    <span class="text-white me-3">Welcome, {{ username }}!</span>
+                    <a href="{{ url_for('route_logout') }}" class="btn btn-danger">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Flash Messages -->
+        <div id="flashMessage" class="alert" style="display: none;"></div>
+
+        <!-- Receipt Container - Add this -->
+        <div id="receiptContainer" class="receipt-wrapper"></div>
+
+        <!-- Check-in Form -->
+        <div class="row">
+            <div class="col-md-6">
+                <div class="parking-card">
+                    <h2 class="card-title"><i class="fas fa-sign-in-alt"></i> Check-in Vehicle</h2>
+                    <form id="checkinForm" method="POST" action="{{ url_for('route_checkin') }}">
+                        <div class="mb-3">
+                            <label class="form-label">Vehicle Number</label>
+                            <input type="text" 
+                                   name="vehicle_number" 
+                                   class="form-control" 
+                                   required 
+                                   placeholder="Enter vehicle number">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Payment Mode</label>
+                            <div class="payment-options">
+                                <div class="payment-option" onclick="selectPayment(this, 'UPI', 'checkinPaymentMode')">
+                                    <i class="fas fa-mobile-alt"></i>
+                                    <div>UPI</div>
+                                </div>
+                                <div class="payment-option" onclick="selectPayment(this, 'Cash', 'checkinPaymentMode')">
+                                    <i class="fas fa-money-bill-wave"></i>
+                                    <div>Cash</div>
+                                </div>
+                                <div class="payment-option" onclick="selectPayment(this, 'Card', 'checkinPaymentMode')">
+                                    <i class="fas fa-credit-card"></i>
+                                    <div>Card</div>
+                                </div>
+                            </div>
+                            <input type="hidden" name="payment_mode" id="checkinPaymentMode" required>
+                        </div>
+                        <button type="submit" class="btn btn-custom btn-checkin">
+                            <i class="fas fa-sign-in-alt"></i> Check-in
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Check-out Form -->
+            <div class="col-md-6">
+                <div class="parking-card">
+                    <h2 class="card-title"><i class="fas fa-sign-out-alt"></i> Check-out Vehicle</h2>
+                    <form id="checkoutForm" method="POST" action="{{ url_for('route_checkout') }}">
+                        <div class="mb-3">
+                            <label class="form-label required-field">Vehicle Number</label>
+                            <input type="text" 
+                                   name="vehicle_number" 
+                                   id="checkoutVehicleNumber"
+                                   class="form-control" 
+                                   required 
+                                   pattern="^[A-Za-z0-9\s-]{5,}$"
+                                   placeholder="Enter vehicle number"
+                                   autocomplete="off">
+                            <div class="vehicle-suggestions" id="vehicleSuggestions"></div>
+                            <div class="invalid-feedback">
+                                Please enter a valid vehicle number (min 5 characters)
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-custom btn-checkout">
+                            <i class="fas fa-sign-out-alt"></i> Check-out
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delivery Jobs Section -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="parking-card">
+                    <h2 class="card-title"><i class="fas fa-tasks"></i> Delivery Jobs</h2>
+                    
+                    {% if user_jobs %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Job ID</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th>Deadline</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for job in user_jobs %}
+                                <tr>
+                                    <td>{{ job._id|string if not job.job_id else job.job_id }}</td>
+                                    <td>{{ job.load_from }}</td>
+                                    <td>{{ job.load_to }}</td>
+                                    <td>{{ job.deadline.strftime('%Y-%m-%d %H:%M') if job.deadline else 'Not set' }}</td>
+                                    <td>
+                                        <span class="badge {% if job.status == 'open' %}bg-warning{% elif job.status == 'assigned' %}bg-info{% elif job.status == 'in_progress' %}bg-primary{% elif job.status == 'completed' %}bg-success{% else %}bg-secondary{% endif %}">
+                                            {{ job.status|capitalize|replace('_', ' ') }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <form action="{{ url_for('route_update_job_status', job_id=job._id) }}" method="POST" style="display: inline;">
+                                            {% if job.status == 'open' or job.status == 'assigned' %}
+                                                <input type="hidden" name="status" value="in_progress">
+                                                <button type="submit" class="btn btn-primary btn-sm">
+                                                    <i class="fas fa-play"></i> Start Delivery
+                                                </button>
+                                            {% elif job.status == 'in_progress' %}
+                                                <input type="hidden" name="status" value="completed">
+                                                <button type="submit" class="btn btn-success btn-sm">
+                                                    <i class="fas fa-check"></i> Mark Completed
+                                                </button>
+                                            {% endif %}
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> No delivery jobs assigned to you.
+                    </div>
+                    {% endif %}
+                    
+                    <h3 class="mt-4">Available Delivery Jobs</h3>
+                    {% if available_jobs %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Job ID</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th>Deadline</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for job in available_jobs %}
+                                <tr>
+                                    <td>{{ job._id|string if not job.job_id else job.job_id }}</td>
+                                    <td>{{ job.load_from }}</td>
+                                    <td>{{ job.load_to }}</td>
+                                    <td>{{ job.deadline.strftime('%Y-%m-%d %H:%M') if job.deadline else 'Not set' }}</td>
+                                    <td>
+                                        <form action="{{ url_for('route_assign_job', job_id=job._id) }}" method="POST">
+                                            <input type="hidden" name="username" value="{{ username }}">
+                                            <button type="submit" class="btn btn-success btn-sm">
+                                                <i class="fas fa-hand-pointer"></i> Accept Job
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> No available delivery jobs at the moment.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating buttons section -->
+        <div class="reprint-container">
+            <button onclick="reprintLastReceipt()" class="btn btn-reprint">
+                <i class="fas fa-redo"></i> Reprint Last Receipt
+            </button>
+        </div>
+        
+        <div class="whatsapp-container">
+            <a href="https://wa.me/919150137699?text=hey,%20got%20got%20some%20issues%20with%20the%20delivery?" 
+               class="btn btn-success btn-whatsapp" 
+               target="_blank">
+                <i class="fab fa-whatsapp"></i> queries
+            </a>
+        </div>
+    </div>
+
+    <!-- Scripts section -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const CHECKIN_URL = "{{ url_for('route_checkin') }}";
+        const CHECKOUT_URL = "{{ url_for('route_checkout') }}";
+        const SUGGESTIONS_URL = "{{ url_for('route_get_vehicle_suggestions') }}";
+        
+        // Add selectPayment function
+        function selectPayment(element, mode, inputId) {
+            // Remove selected class from all options in the same container
+            const options = element.closest('.payment-options').querySelectorAll('.payment-option');
+            options.forEach(opt => opt.classList.remove('selected'));
+            
+            // Add selected class to clicked option
+            element.classList.add('selected');
+            
+            // Set the value in hidden input
+            document.getElementById(inputId).value = mode;
+        }
+
+        // Function to print receipt
+        function printReceipt(receiptId) {
+            const receiptElement = document.getElementById(receiptId);
+            if (!receiptElement) return;
+            
+            const printWindow = window.open('', '', 'width=600,height=600');
+            printWindow.document.open();
+            
+            // Add necessary styles
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
+                    <style>
+                        @page {
+                            margin: 0;
+                            size: 58mm auto;
+                        }
+                        body {
+                            margin: 0;
+                            padding: 0;
+                            font-family: 'Courier New', monospace;
+                        }
+                        .receipt-container {
+                            width: 58mm;
+                            margin: 0;
+                            padding: 0;
+                            background: white;
+                        }
+                        .receipt {
+                            padding: 8px;
+                        }
+                        .receipt-header {
+                            text-align: center;
+                            margin-bottom: 10px;
+                        }
+                        .company-logo {
+                            font-size: 2em;
+                            margin-bottom: 5px;
+                        }
+                        .receipt-header h2 {
+                            margin: 5px 0;
+                            font-size: 1.2em;
+                            font-weight: bold;
+                            letter-spacing: 0.1em;
+                        }
+                        .receipt-meta {
+                            font-size: 1.2em;
+                            font-weight: bold;
+                            margin: 5px 0;
+                        }
+                        .receipt-divider {
+                            border-top: 1px dashed #000;
+                            margin: 8px 0;
+                        }
+                        .receipt-section {
+                            margin: 8px 0;
+                        }
+                        .receipt-row {
+                            display: flex;
+                            justify-content: space-between;
+                            margin: 4px 0;
+                            font-size: 0.9em;
+                        }
+                        .receipt-row .label {
+                            color: #666;
+                        }
+                        .receipt-row .value {
+                            font-weight: bold;
+                        }
+                        .receipt-row .highlight {
+                            color: #1a73e8;
+                            font-weight: bold;
+                        }
+                        .receipt-footer {
+                            text-align: center;
+                            margin-top: 10px;
+                        }
+                        .receipt-footer .extra-info {
+                            font-size: 0.8em;
+                            color: #666;
+                            margin-bottom: 8px;
+                        }
+                        .receipt-footer .extra-info small {
+                            display: block;
+                            line-height: 1.4;
+                        }
+                        .receipt-footer .thank-you {
+                            font-weight: bold;
+                            font-size: 1.1em;
+                            margin: 8px 0;
+                        }
+                        .receipt-footer .barcode {
+                            font-family: 'Libre Barcode 39', cursive;
+                            font-size: 1.5em;
+                            margin-top: 8px;
+                            letter-spacing: -1px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${receiptElement.outerHTML}
+                </body>
+                </html>
+            `);
+            
+            printWindow.document.close();
+            
+            // Wait for content and fonts to load then print
+            printWindow.onload = function() {
+                setTimeout(() => {
+                    printWindow.print();
+                    printWindow.close();
+                }, 250);
+            };
+        }
+
+        // Store last receipt for reprinting
+        let lastReceipt = null;
+
+        // Function to handle form submission
+        function handleFormSubmission(formElement, url) {
+            formElement.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const formData = new FormData(this);
+                
+                fetch(url, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showFlashMessage(data.message, 'danger');
+                    } else {
+                        showFlashMessage(data.message, 'success');
+                        
+                        // Store and display receipt
+                        lastReceipt = data.receipt;
+                        const receiptContainer = document.getElementById('receiptContainer');
+                        receiptContainer.innerHTML = data.receipt;
+                        
+                        // Print receipt
+                        setTimeout(() => {
+                            const receipt = receiptContainer.querySelector('.receipt-container');
+                            if (receipt) {
+                                printReceipt(receipt.id);
+                            }
+                        }, 500);
+                        
+                        // Reset form
+                        this.reset();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showFlashMessage('An error occurred', 'danger');
+                });
+            });
+        }
+
+        // Initialize form handlers
+        handleFormSubmission(document.getElementById('checkinForm'), CHECKIN_URL);
+        handleFormSubmission(document.getElementById('checkoutForm'), CHECKOUT_URL);
+
+        // Function to show flash messages
+        function showFlashMessage(message, type = 'success') {
+            const flashDiv = document.getElementById('flashMessage');
+            flashDiv.textContent = message;
+            flashDiv.className = `alert alert-${type} position-fixed top-0 end-0 m-3`;
+            flashDiv.style.display = 'block';
+            flashDiv.style.zIndex = '1050';
+            
+            setTimeout(() => {
+                flashDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // Function to reprint last receipt
+        function reprintLastReceipt() {
+            if (lastReceipt) {
+                const receiptContainer = document.getElementById('receiptContainer');
+                receiptContainer.innerHTML = lastReceipt;
+                
+                setTimeout(() => {
+                    const receipt = receiptContainer.querySelector('.receipt-container');
+                    if (receipt) {
+                        printReceipt(receipt.id);
+                    }
+                }, 500);
+            } else {
+                showFlashMessage('No receipt available to reprint', 'warning');
+            }
+        }
+
+        // Add vehicle suggestions functionality
+        const checkoutInput = document.getElementById('checkoutVehicleNumber');
+        const suggestionsDiv = document.getElementById('vehicleSuggestions');
+        let debounceTimer;
+
+        checkoutInput.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            const query = this.value.trim();
+            
+            // Clear suggestions if input is empty
+            if (!query) {
+                suggestionsDiv.innerHTML = '';
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+            
+            // Debounce the API call
+            debounceTimer = setTimeout(() => {
+                fetch(`${SUGGESTIONS_URL}?query=${encodeURIComponent(query)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.suggestions && data.suggestions.length > 0) {
+                            // Create suggestions HTML
+                            const suggestionsHtml = data.suggestions
+                                .map(suggestion => `
+                                    <div class="suggestion-item" onclick="selectVehicle('${suggestion}')">
+                                        ${suggestion}
+                                    </div>
+                                `)
+                                .join('');
+                            
+                            suggestionsDiv.innerHTML = suggestionsHtml;
+                            suggestionsDiv.style.display = 'block';
+                        } else {
+                            suggestionsDiv.innerHTML = '';
+                            suggestionsDiv.style.display = 'none';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching suggestions:', error);
+                        suggestionsDiv.style.display = 'none';
+                    });
+            }, 300); // Wait 300ms after user stops typing
+        });
+
+        // Function to select a vehicle from suggestions
+        function selectVehicle(vehicleNumber) {
+            checkoutInput.value = vehicleNumber;
+            suggestionsDiv.style.display = 'none';
+        }
+
+        // Hide suggestions when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!checkoutInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+                suggestionsDiv.style.display = 'none';
+            }
+        });
+    </script>
+
+    <style>
+        .vehicle-suggestions {
+            position: absolute;
+            width: 100%;
+            max-height: 200px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: none;
+        }
+
+        .suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .suggestion-item:hover {
+            background-color: #f5f5f5;
+        }
+    </style>
+</body>
+</html>
